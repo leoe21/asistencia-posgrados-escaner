@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Registro de llegada – Escáner QR</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      margin: 0;
+      padding: 16px;
+      background: #1a1a2e;
+      color: #eee;
+      min-height: 100vh;
+    }
+    h1 {
+      text-align: center;
+      font-size: 1.4rem;
+      margin-bottom: 8px;
+    }
+    .sub {
+      text-align: center;
+      color: #aaa;
+      font-size: 0.9rem;
+      margin-bottom: 20px;
+    }
+    #videoContainer {
+      position: relative;
+      max-width: 100%;
+      margin: 0 auto 20px;
+      border-radius: 12px;
+      overflow: hidden;
+      background: #000;
+      aspect-ratio: 4/3;
+    }
+    #video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    #canvas {
+      display: none;
+    }
+    .manual {
+      max-width: 320px;
+      margin: 0 auto;
+      padding: 16px;
+      background: #16213e;
+      border-radius: 12px;
+    }
+    .manual label {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 0.9rem;
+    }
+    .manual input {
+      width: 100%;
+      padding: 12px;
+      font-size: 1rem;
+      border: 1px solid #333;
+      border-radius: 8px;
+      background: #0f0f1a;
+      color: #eee;
+      margin-bottom: 12px;
+    }
+    .manual input::placeholder {
+      color: #666;
+    }
+    .btn {
+      display: block;
+      width: 100%;
+      padding: 14px;
+      font-size: 1rem;
+      font-weight: 600;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      text-align: center;
+      text-decoration: none;
+      transition: opacity 0.2s;
+    }
+    .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+    .btn-primary {
+      background: #4361ee;
+      color: #fff;
+      margin-bottom: 10px;
+    }
+    .btn-secondary {
+      background: #333;
+      color: #eee;
+    }
+    .error-msg {
+      background: #3d1a1a;
+      color: #f88;
+      padding: 12px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+      font-size: 0.9rem;
+      display: none;
+    }
+    .error-msg.visible { display: block; }
+    .link-back {
+      text-align: center;
+      margin-top: 20px;
+    }
+    .link-back a { color: #6ea8fe; }
+  </style>
+</head>
+<body>
+  <h1>Registro de llegada</h1>
+  <p class="sub">Escanea el QR con la cámara o escribe el código abajo.</p>
+
+  <div id="errorMsg" class="error-msg"></div>
+
+  <div id="videoContainer" style="display: none;">
+    <video id="video" playsinline muted></video>
+    <canvas id="canvas"></canvas>
+  </div>
+
+  <button type="button" id="btnCamera" class="btn btn-primary">Activar cámara para escanear</button>
+
+  <div class="manual">
+    <label for="codigo">O escribe el código aquí:</label>
+    <input type="text" id="codigo" placeholder="Ejemplo: 1" autocomplete="off" inputmode="numeric">
+    <button type="button" id="btnMarcar" class="btn btn-secondary">Marcar como llegado</button>
+  </div>
+
+  <p class="link-back">
+    <a href="https://github.com/leoe21/codigo_qr_asistencia_posgrados">Repositorio del proyecto</a>
+  </p>
+
+  <!-- Configuración: reemplaza con la URL de tu Web App de Google Apps Script -->
+  <script>
+    window.ESCANER_CONFIG = {
+      // URL base de tu implementación (Implementar → Implementaciones → URL de la aplicación web)
+      urlGAS: "https://script.google.com/a/macros/unicauca.edu.co/s/AKfycbyxkLH6l-ESPtuw9HdvSBzU_1ZDJLbzGLvc29u3GWuwUtmg1A8PgFWo8zoq3Dty92n7/exec"
+    };
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+  <script>
+    (function() {
+      var video = document.getElementById("video");
+      var canvas = document.getElementById("canvas");
+      var ctx = canvas.getContext("2d");
+      var videoContainer = document.getElementById("videoContainer");
+      var btnCamera = document.getElementById("btnCamera");
+      var btnMarcar = document.getElementById("btnMarcar");
+      var codigoInput = document.getElementById("codigo");
+      var errorMsg = document.getElementById("errorMsg");
+      var stream = null;
+
+      function showError(msg) {
+        errorMsg.textContent = msg;
+        errorMsg.classList.add("visible");
+      }
+      function hideError() {
+        errorMsg.classList.remove("visible");
+        errorMsg.textContent = "";
+      }
+
+      function getVolverUrl() {
+        return encodeURIComponent(window.location.origin + window.location.pathname);
+      }
+
+      function irAMarcar(id) {
+        var urlGAS = window.ESCANER_CONFIG && window.ESCANER_CONFIG.urlGAS;
+        if (!urlGAS || urlGAS.indexOf("TU_DEPLOYMENT_ID") !== -1) {
+          showError("Configura la URL del script en index.html (busca urlGAS en ESCANER_CONFIG).");
+          return;
+        }
+        var volver = getVolverUrl();
+        var url = urlGAS + "?page=marcar&id=" + encodeURIComponent(id) + "&volver=" + volver;
+        window.location.href = url;
+      }
+
+      btnCamera.addEventListener("click", function() {
+        hideError();
+        if (stream) {
+          stream.getTracks().forEach(function(t) { t.stop(); });
+          stream = null;
+          videoContainer.style.display = "none";
+          btnCamera.textContent = "Activar cámara para escanear";
+          return;
+        }
+        btnCamera.disabled = true;
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+          .then(function(mediaStream) {
+            stream = mediaStream;
+            video.srcObject = stream;
+            video.setAttribute("playsinline", true);
+            video.play();
+            videoContainer.style.display = "block";
+            btnCamera.textContent = "Apagar cámara";
+            btnCamera.disabled = false;
+            requestAnimationFrame(tick);
+          })
+          .catch(function(err) {
+            btnCamera.disabled = false;
+            showError("No se pudo acceder a la cámara. Comprueba los permisos del navegador o usa el cuadro de texto.");
+          });
+      });
+
+      function tick() {
+        if (!stream || !video.videoWidth) {
+          requestAnimationFrame(tick);
+          return;
+        }
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        ctx.drawImage(video, 0, 0);
+        var imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        var code = jsQR(imageData.data, imageData.width, imageData.height);
+        if (code && code.data) {
+          var id = code.data.trim();
+          if (id) {
+            stream.getTracks().forEach(function(t) { t.stop(); });
+            stream = null;
+            videoContainer.style.display = "none";
+            btnCamera.textContent = "Activar cámara para escanear";
+            irAMarcar(id);
+            return;
+          }
+        }
+        requestAnimationFrame(tick);
+      }
+
+      btnMarcar.addEventListener("click", function() {
+        var codigo = codigoInput.value.trim();
+        if (!codigo) {
+          showError("Escribe un código.");
+          return;
+        }
+        hideError();
+        irAMarcar(codigo);
+      });
+
+      codigoInput.addEventListener("keydown", function(e) {
+        if (e.key === "Enter") btnMarcar.click();
+      });
+    })();
+  </script>
+</body>
+</html>
