@@ -101,6 +101,12 @@
       display: none;
     }
     .error-msg.visible { display: block; }
+    .aviso-clave {
+      background: #3d321a; color: #ffd27a; padding: 12px; border-radius: 8px; margin-bottom: 16px; font-size: 0.95rem; display: none;
+    }
+    .btn-buscar {
+      background: #2d6a4f; color: #fff; max-width: 320px; margin: 14px auto 0;
+    }
     .link-back {
       text-align: center;
       margin-top: 20px;
@@ -112,6 +118,7 @@
   <h1>Registro de llegada</h1>
   <p class="sub">Escanea el QR con la cámara o escribe el código abajo.</p>
 
+  <div id="avisoClave" class="aviso-clave">Falta la clave de la puerta. Abre el escáner con el enlace que te dieron para la entrada (termina en #k=…).</div>
   <div id="errorMsg" class="error-msg"></div>
 
   <div id="videoContainer" style="display: none;">
@@ -123,9 +130,11 @@
 
   <div class="manual">
     <label for="codigo">O escribe el código aquí:</label>
-    <input type="text" id="codigo" placeholder="Ejemplo: 1" autocomplete="off" inputmode="numeric">
+    <input type="text" id="codigo" placeholder="Ejemplo: 20262015" autocomplete="off" autocapitalize="off" spellcheck="false" inputmode="numeric">
     <button type="button" id="btnMarcar" class="btn btn-secondary">Marcar como llegado</button>
   </div>
+
+  <a id="btnBuscar" class="btn btn-buscar" href="#">Buscar por nombre / registrar a alguien que no está en la lista</a>
 
   <p class="link-back">
     <a href="https://github.com/leoe21/codigo_qr_asistencia_posgrados">Repositorio del proyecto</a>
@@ -136,7 +145,7 @@
     window.ESCANER_CONFIG = {
       // URL base de tu implementación (Implementar → Implementaciones → URL de la aplicación web)
       //urlGAS: "https://script.google.com/a/macros/unicauca.edu.co/s/AKfycbyxkLH6l-ESPtuw9HdvSBzU_1ZDJLbzGLvc29u3GWuwUtmg1A8PgFWo8zoq3Dty92n7/exec"
-      urlGAS: "https://script.google.com/a/macros/unicauca.edu.co/s/AKfycbwZeTh0qXe3sYNdp74b70-oXc0CssuqMs54TFzQylEwSjRYEC_G-10VI9q53Q7wzGV9/exec"
+      urlGAS: "https://script.google.com/macros/s/AKfycbwZeTh0qXe3sYNdp74b70-oXc0CssuqMs54TFzQylEwSjRYEC_G-10VI9q53Q7wzGV9/exec"
     };
   </script>
   <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
@@ -150,7 +159,18 @@
       var btnMarcar = document.getElementById("btnMarcar");
       var codigoInput = document.getElementById("codigo");
       var errorMsg = document.getElementById("errorMsg");
+      var btnBuscar = document.getElementById("btnBuscar");
       var stream = null;
+
+      // Clave de la puerta: viene en el enlace del personal (#k=...) y se recuerda en este celular.
+      var clave = "";
+      var m = /[#&]k=([^&]+)/.exec(window.location.hash);
+      if (m) clave = decodeURIComponent(m[1]);
+      try {
+        if (clave) localStorage.setItem("clavePuerta", clave);
+        else clave = localStorage.getItem("clavePuerta") || "";
+      } catch (e) {}
+      if (!clave) document.getElementById("avisoClave").style.display = "block";
 
       function showError(msg) {
         errorMsg.textContent = msg;
@@ -162,17 +182,26 @@
       }
 
       function getVolverUrl() {
-        return encodeURIComponent(window.location.origin + window.location.pathname);
+        return encodeURIComponent(window.location.origin + window.location.pathname + (clave ? "#k=" + encodeURIComponent(clave) : ""));
       }
-
-      function irAMarcar(id) {
+      function urlBase() {
         var urlGAS = window.ESCANER_CONFIG && window.ESCANER_CONFIG.urlGAS;
         if (!urlGAS || urlGAS.indexOf("TU_DEPLOYMENT_ID") !== -1) {
           showError("Configura la URL del script en index.html (busca urlGAS en ESCANER_CONFIG).");
-          return;
+          return "";
         }
-        var volver = getVolverUrl();
-        var url = urlGAS + "?page=marcar&id=" + encodeURIComponent(id) + "&volver=" + volver;
+        return urlGAS;
+      }
+      btnBuscar.addEventListener("click", function(e) {
+        e.preventDefault();
+        var base = urlBase();
+        if (base) window.location.href = base + "?page=puerta&k=" + encodeURIComponent(clave) + "&volver=" + getVolverUrl();
+      });
+
+      function irAMarcar(id) {
+        var urlGAS = urlBase();
+        if (!urlGAS) return;
+        var url = urlGAS + "?page=marcar&id=" + encodeURIComponent(id) + "&k=" + encodeURIComponent(clave) + "&volver=" + getVolverUrl();
         window.location.href = url;
       }
 
